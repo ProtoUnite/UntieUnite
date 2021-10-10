@@ -30,10 +30,10 @@ namespace UntieUnite.Core
             var resMapRaw = GetResMapRaw(inDir);
             var resMapFormat = GetAssetFormat(resMapRaw);
             var resMapData = DecryptResMap(resMapRaw, resMapFormat);
-            if (resMapPb)
-                File.WriteAllBytes(Path.Combine(outDir, "ResMapPb.pb"), resMapData);
-
-            var resmap = PbResMap.Parser.ParseFrom(resMapData);
+            if (resMapPb) {
+                File.WriteAllBytes(Path.Combine(outDir, resMapFormat == AssetFormat.Android2 ? "ResPackerInfoSet.bin" : "ResMapPb.pb"), resMapData);
+            }
+            var resmap = PbResMap.Parser.ParseFrom(resMapData); // Update this
 
             if (jsonResMap)
                 ExportResMapJson(outDir, resmap, resMapFormat);
@@ -47,7 +47,10 @@ namespace UntieUnite.Core
 
         private static byte[] GetResMapRaw(string inDir)
         {
-            var resMapPath = Path.Combine(inDir, "ResMapPb.bytes");
+            var resMapPath = Path.Combine(inDir, "ResPackerInfoSet.bin");
+            if (!File.Exists(resMapPath))
+                resMapPath = Path.Combine(inDir, "ResMapPb.bytes");
+
             return File.ReadAllBytes(resMapPath);
         }
 
@@ -56,6 +59,7 @@ namespace UntieUnite.Core
             var salt = format switch
             {
                 AssetFormat.Android => EncryptKey._0xC093D547,
+                AssetFormat.Android2 => GetAssetSalt("ResPackerInfoSet.bin"),
                 AssetFormat.Switch => GetAssetSalt("ResMapPb.bytes"),
                 _ => throw new ArgumentOutOfRangeException($"Invalid AssetFormat for ResMapPb.bytes ({format})"),
             };

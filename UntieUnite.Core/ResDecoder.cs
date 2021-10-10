@@ -11,9 +11,10 @@ namespace UntieUnite.Core
     /// </summary>
     public class ResDecoder
     {
-        public static readonly byte[] MasterKeyAndroid = { 0xB2, 0x7F, 0x19, 0x12, 0x8D, 0x5F, 0xCB, 0x75, 0xB0, 0xEA, 0x2A, 0x60, 0xCC, 0x03, 0xA2, 0x55 };
+        public static readonly byte[] MasterKeyOld = { 0xB2, 0x7F, 0x19, 0x12, 0x8D, 0x5F, 0xCB, 0x75, 0xB0, 0xEA, 0x2A, 0x60, 0xCC, 0x03, 0xA2, 0x55 };
         public static readonly byte[] MagicAndPaddingAndroid = { 0x9D, 0x4C, 0x2D, 0x00 };
-        public static readonly byte[] MasterKeySwitch = { 0x99, 0x64, 0xB1, 0xB0, 0x6B, 0x03, 0x8D, 0x7F, 0xB7, 0x7D, 0xB6, 0xA7, 0x54, 0x90, 0x8B, 0x73 };
+        public static readonly byte[] MagicAndPaddingAndroid2 = { 0x22, 0x4A, 0x67, 0x00 };
+        public static readonly byte[] MasterKeyNew = { 0x99, 0x64, 0xB1, 0xB0, 0x6B, 0x03, 0x8D, 0x7F, 0xB7, 0x7D, 0xB6, 0xA7, 0x54, 0x90, 0x8B, 0x73 };
         public static readonly byte[] MagicAndPaddingSwitch = { 0x22, 0x4A, 0x67, 0x00 };
         public static readonly byte[] MagicAndPaddingSwitch2 = { 0x22, 0x4A, 0xEF, 0x00 };
 
@@ -22,8 +23,9 @@ namespace UntieUnite.Core
 
         public static byte[] GetMasterKey(AssetFormat format) => format switch
         {
-            AssetFormat.Android => MasterKeyAndroid,
-            AssetFormat.Switch => MasterKeySwitch,
+            AssetFormat.Android => MasterKeyOld,
+            AssetFormat.Android2 => MasterKeyNew,
+            AssetFormat.Switch => MasterKeyNew,
             _ => throw new ArgumentOutOfRangeException($"Invalid Asset Format ({format})")
         };
 
@@ -53,6 +55,8 @@ namespace UntieUnite.Core
         {
             if (IsValidMagic(archive, MagicAndPaddingAndroid))
                 return AssetFormat.Android;
+            if (IsValidMagic(archive, MagicAndPaddingAndroid2))
+                return AssetFormat.Android2;
             if (IsValidMagic(archive, MagicAndPaddingSwitch) || IsValidMagic(archive, MagicAndPaddingSwitch2))
                 return AssetFormat.Switch;
             return AssetFormat.Invalid;
