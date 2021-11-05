@@ -27,13 +27,14 @@ namespace UntieUnite.Core
         {
             Directory.CreateDirectory(outDir);
 
+            var resMapName = GetResMapName(inDir);
             var resMapRaw = GetResMapRaw(inDir);
             var resMapFormat = GetAssetFormat(resMapRaw);
-            var resMapData = DecryptResMap(resMapRaw, resMapFormat);
-            if (resMapPb) {
-                File.WriteAllBytes(Path.Combine(outDir, resMapFormat == AssetFormat.Android2 ? "ResPackerInfoSet.bin" : "ResMapPb.pb"), resMapData);
-            }
-            var resmap = PbResMap.Parser.ParseFrom(resMapData); // Update this
+            var resMapData = DecryptResMap(resMapRaw, resMapFormat, resMapName);
+
+            PbResMap resmap = resMapName == "ResPackerInfoSet.bin" ?
+                              ResPackerInfoSet.Parser.ParseFrom(resMapData) :
+                              PbResMap.Parser.ParseFrom(resMapData);
 
             if (jsonResMap)
                 ExportResMapJson(outDir, resmap, resMapFormat);
@@ -45,6 +46,13 @@ namespace UntieUnite.Core
                 DumpSound(inDir, outDir, resMapFormat);
         }
 
+        private static string GetResMapName(string inDir) {
+            var resMapPath = Path.Combine(inDir, "ResPackerInfoSet.bin");
+            if (!File.Exists(resMapPath))
+                return "ResMapPb.bytes";
+            return "ResPackerInfoSet.bin";
+        }
+
         private static byte[] GetResMapRaw(string inDir)
         {
             var resMapPath = Path.Combine(inDir, "ResPackerInfoSet.bin");
@@ -54,14 +62,13 @@ namespace UntieUnite.Core
             return File.ReadAllBytes(resMapPath);
         }
 
-        private static byte[] DecryptResMap(byte[] resMapRaw, AssetFormat format)
+        private static byte[] DecryptResMap(byte[] resMapRaw, AssetFormat format, string name = "ResMapPb.bytes")
         {
             var salt = format switch
             {
                 AssetFormat.Android => EncryptKey._0xC093D547,
-                AssetFormat.Android2 => GetAssetSalt("ResPackerInfoSet.bin"),
-                AssetFormat.Switch => GetAssetSalt("ResMapPb.bytes"),
-                _ => throw new ArgumentOutOfRangeException($"Invalid AssetFormat for ResMapPb.bytes ({format})"),
+                AssetFormat.Switch => GetAssetSalt(name),
+                _ => throw new ArgumentOutOfRangeException($"Invalid AssetFormat for {name} ({format})"),
             };
 
             return DecryptAndDecompress(salt, resMapRaw);
@@ -78,7 +85,7 @@ namespace UntieUnite.Core
         private static void ExportResMapJson(string outDir, PbResMap resmap, AssetFormat assetFormat)
         {
             var serialized = JsonConvert.SerializeObject(resmap, Formatting.Indented);
-            File.WriteAllText(Path.Combine(outDir, "ResMapPb.json"), serialized);
+            File.WriteAllText(Path.Combine(outDir, "PbResMap.json"), serialized);
         }
 
         /// <summary>
@@ -150,8 +157,11 @@ namespace UntieUnite.Core
             foreach (var bundleInfo in resmap.Assetbundles)
             {
                 var fileName = bundleInfo.Name;
-
+                if (!fileName.EndsWith(".bundle")) // Skip zips
+                    continue; 
                 var path = Path.Combine(inDir, fileName);
+                if (!File.Exists(path)) // Just in case
+                    continue;
                 var bundle = File.ReadAllBytes(path);
 
                 var decBundle = DecryptAssetBundle(bundle, assetFormat);
@@ -231,7 +241,7 @@ namespace UntieUnite.Core
                 throw new ArgumentException("Invalid Bundle Signature");
 
             var version = BigEndian.ToUInt32(bundle, signatureLen + 1);
-            if (version > 6)
+            if (version > 7)
                 throw new ArgumentException("Invalid Bundle Version");
 
             var unityVersionEnd = Array.IndexOf(bundle, (byte)0, signatureLen + 1 + 4);
@@ -277,9 +287,14 @@ namespace UntieUnite.Core
             if (assetFormat == AssetFormat.Android)
                 return bundle;
 
+            // Version 7 requires to force align
+            var blockOffset = offset + 0x14;
+            if (version == 7 && blockOffset % 16 != 0) 
+                blockOffset += 16 - blockOffset % 16;
+
             // If switch, we need to fix up the compressed block info.
             var compressedBlockInfo = new byte[compressedBlockSize];
-            Buffer.BlockCopy(bundle, offset + 0x14, compressedBlockInfo, 0, compressedBlockSize);
+            Buffer.BlockCopy(bundle, blockOffset, compressedBlockInfo, 0, compressedBlockSize);
 
             byte[] blockInfo;
             switch (flags & 0x3F)
@@ -316,9 +331,9 @@ namespace UntieUnite.Core
 
             // Generate fixed asset bundle
             var fixedBundle = new byte[bundle.Length - compressedBlockInfo.Length + fixedBlockInfo.Length];
-            Buffer.BlockCopy(bundle, 0, fixedBundle, 0, offset + 0x14);
-            Buffer.BlockCopy(fixedBlockInfo, 0, fixedBundle, offset + 0x14, fixedBlockInfo.Length);
-            Buffer.BlockCopy(bundle, offset + 0x14 + compressedBlockInfo.Length, fixedBundle, offset + 0x14 + fixedBlockInfo.Length, bundle.Length - (offset + 0x14 + compressedBlockInfo.Length));
+            Buffer.BlockCopy(bundle, 0, fixedBundle, 0, blockOffset);
+            Buffer.BlockCopy(fixedBlockInfo, 0, fixedBundle, blockOffset, fixedBlockInfo.Length);
+            Buffer.BlockCopy(bundle, blockOffset + compressedBlockInfo.Length, fixedBundle, blockOffset + fixedBlockInfo.Length, bundle.Length - (blockOffset+ compressedBlockInfo.Length));
 
             BigEndian.GetBytes((ulong)fixedBundle.Length).CopyTo(fixedBundle, offset);
             BigEndian.GetBytes(fixedBlockInfo.Length).CopyTo(fixedBundle, offset + 8);

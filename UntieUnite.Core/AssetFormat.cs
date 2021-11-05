@@ -4,7 +4,6 @@
     {
         Invalid,
         Android,
-        Android2,
         Switch
     }
 }
