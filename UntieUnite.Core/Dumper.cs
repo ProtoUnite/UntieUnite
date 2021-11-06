@@ -289,8 +289,8 @@ namespace UntieUnite.Core
 
             // Version 7 requires to force align
             var blockOffset = offset + 0x14;
-            if (version == 7 && blockOffset % 16 != 0) 
-                blockOffset += 16 - blockOffset % 16;
+            if (version == 7) 
+                blockOffset = (blockOffset - 1 | 15) + 1;
 
             // If switch, we need to fix up the compressed block info.
             var compressedBlockInfo = new byte[compressedBlockSize];
