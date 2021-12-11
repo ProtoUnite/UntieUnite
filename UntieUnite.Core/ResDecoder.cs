@@ -68,6 +68,16 @@ namespace UntieUnite.Core
             return hash;
         }
 
+        public static uint GetAssetName(string resName)
+        {
+            var hash = 0u;
+
+            foreach (var c in resName)
+                hash = (31 * hash) + c;
+
+            return hash;
+        }
+
         public bool TryDecryptBytes(byte[] archive, [NotNullWhen(true)] out byte[]? decrypted)
         {
             /* On default failure, return null. */

@@ -7,6 +7,9 @@ using Newtonsoft.Json;
 using PbSerial;
 using static UntieUnite.Core.ResDecoder;
 
+using System.Collections.Generic;
+using System.Linq;
+
 namespace UntieUnite.Core
 {
     /// <summary>
@@ -109,7 +112,7 @@ namespace UntieUnite.Core
 
             //var dataBinPath = Path.Combine(inDir, "Databins.zip");
             //using var databinZip = ZipFile.OpenRead(dataBinPath);
-
+            /*
             foreach (var (hash, name) in resmap.HashToAssetNames)
             {
                 if (name.StartsWith("languagemap"))
@@ -153,12 +156,16 @@ namespace UntieUnite.Core
                     }
                 }
             }
-
+            */
+			string langzip = "";
             foreach (var bundleInfo in resmap.Assetbundles)
             {
                 var fileName = bundleInfo.Name;
                 if (!fileName.EndsWith(".bundle")) // Skip zips
+                    if (bundleInfo.Content.Contains("1343719561.msbt"))
+                        langzip = bundleInfo.Name;
                     continue; 
+
                 var path = Path.Combine(inDir, fileName);
                 if (!File.Exists(path)) // Just in case
                     continue;
@@ -168,6 +175,33 @@ namespace UntieUnite.Core
 
                 var dest = Path.Combine(dirDumpAssetBundle, fileName);
                 File.WriteAllBytes(dest, decBundle);
+            }
+            // Crude way for language files 
+            // Don't PR proper way - I know how to do it correctly
+            if (!String.IsNullOrEmpty(langzip)) {
+                string mapPath = Path.Combine(inDir, "LanguageMap", "538308141.bytes");
+                byte[] langm = ResDecoder.DecryptAndDecompress(2177676813, File.ReadAllBytes(mapPath));
+                string str = System.Text.Encoding.Default.GetString(langm);
+                string[] lines = str.Split(new string[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+                string[] langs = { "X", "CHS", "JPN", "ENG", "KOR", "CHT", "FRA", "DEU", "ESP", "ITA" };
+                using var zip = ZipFile.OpenRead(Path.Combine(inDir, langzip));
+                if (zip == null) {
+                    System.Console.WriteLine("Unable to decrypt language msbt files - archive missing");
+                    return;
+                }
+                foreach (var line in lines) {
+                    if (String.IsNullOrEmpty(line))
+                        continue;
+                    string name = Path.GetFileNameWithoutExtension(line);
+                    for (int l = 1; l < langs.Length; l++) { // Skip Null
+                        string locname = name + "_" + langs[l];
+                        string asset = GetAssetName(name + ((char)l).ToString()) + ".msbt";
+                        try {
+                            byte[] data = DecryptAndDecompress(GetAssetSalt(name), ReadZipEntry(zip.GetEntry(asset)));
+                            File.WriteAllBytes(Path.Combine(dirDumpLangMap, locname + ".msbt"), data);
+                        } catch (Exception e) {  }
+                    }
+                }
             }
         }
 
@@ -273,24 +307,24 @@ namespace UntieUnite.Core
             var compressedBlockSize = BigEndian.ToInt32(bundle, offset + 0x8);
             var blockSize = BigEndian.ToInt32(bundle, offset + 0xC);
 
+            // Version 7 requires to force align
+            var blockOffset = offset + 0x14;
+            if (version == 7) 
+                blockOffset = (blockOffset - 1 | 15) + 1;
+
             switch (assetFormat)
             {
                 case AssetFormat.Android:
-                    AssetCrypto.DecryptAssetBundleCompressedBlockInfo(bundle, offset + 0x14, compressedBlockSize);
+                    AssetCrypto.DecryptAssetBundleCompressedBlockInfo(bundle, blockOffset, compressedBlockSize);
                     break;
                 case AssetFormat.Switch:
-                    AssetCrypto.DecryptAssetBundleCompressedBlockInfoSM4(bundle, offset + 0x14, compressedBlockSize);
+                    AssetCrypto.DecryptAssetBundleCompressedBlockInfoSM4(bundle, blockOffset, compressedBlockSize);
                     break;
             }
 
             // If Android, we're done.
             if (assetFormat == AssetFormat.Android)
                 return bundle;
-
-            // Version 7 requires to force align
-            var blockOffset = offset + 0x14;
-            if (version == 7) 
-                blockOffset = (blockOffset - 1 | 15) + 1;
 
             // If switch, we need to fix up the compressed block info.
             var compressedBlockInfo = new byte[compressedBlockSize];
@@ -344,10 +378,19 @@ namespace UntieUnite.Core
 
         private static void DumpSound(string inDir, string outDir, AssetFormat assetFormat)
         {
-            var dirDumpSound = Path.Combine(outDir, "Sound", "Switch");
+            var dirDumpSound = Path.Combine(outDir, "Sound");
             Directory.CreateDirectory(dirDumpSound);
 
-            var sourceDir = new DirectoryInfo(Path.Combine(inDir, "Sound", "Switch"));
+            var path = Path.Combine(inDir, "Sound", "Switch");
+            if (!Directory.Exists(path))
+                path = Path.Combine(inDir, "Sound", "Android");
+
+            if (!Directory.Exists(path))
+                System.Console.WriteLine("No Sound directory found");
+                return;
+
+
+            var sourceDir = new DirectoryInfo(path);
             foreach (var fi in sourceDir.GetFiles())
             {
                 var archive = File.ReadAllBytes(fi.FullName);
