@@ -161,11 +161,12 @@ namespace UntieUnite.Core
             foreach (var bundleInfo in resmap.Assetbundles)
             {
                 var fileName = bundleInfo.Name;
-                if (!fileName.EndsWith(".bundle")) // Skip zips
+                if (!fileName.EndsWith(".bundle")) { // Skip zips
                     if (bundleInfo.Content.Contains("1343719561.msbt"))
                         langzip = bundleInfo.Name;
                     continue; 
-
+				}
+				
                 var path = Path.Combine(inDir, fileName);
                 if (!File.Exists(path)) // Just in case
                     continue;
