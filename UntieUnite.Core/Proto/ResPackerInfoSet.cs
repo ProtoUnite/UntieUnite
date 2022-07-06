@@ -33,7 +33,9 @@ namespace PbSerial {
                     bundle.Name = stream.ReadString();
                     stream.ReadInt32(); // Size
                     bundle.AbId = stream.ReadInt32();
-                    for (int j = stream.ReadInt32(); j > 0; --j) {
+                    var bc = stream.ReadInt32();
+                    bundle.SecurityKey = stream.ReadBytes().ToBase64();
+                    for (int j = bc; j > 0; --j) {
                         uint hash = stream.ReadUInt32();
                         stream.ReadUInt32(); // type
                         string ext = map.ExtStrPool[stream.ReadInt32()];

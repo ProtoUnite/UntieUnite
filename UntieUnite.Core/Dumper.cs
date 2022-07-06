@@ -39,7 +39,7 @@ namespace UntieUnite.Core
                               ResPackerInfoSet.Parser.ParseFrom(resMapData) :
                               PbResMap.Parser.ParseFrom(resMapData);
 
-            if (jsonResMap)
+        if (jsonResMap)
                 ExportResMapJson(outDir, resmap, resMapFormat);
 
             if (extraData)
@@ -157,7 +157,7 @@ namespace UntieUnite.Core
                 }
             }
             */
-			string langzip = "";
+            string langzip = "";
             foreach (var bundleInfo in resmap.Assetbundles)
             {
                 var fileName = bundleInfo.Name;
@@ -165,14 +165,14 @@ namespace UntieUnite.Core
                     if (bundleInfo.Content.Contains("1343719561.msbt"))
                         langzip = bundleInfo.Name;
                     continue; 
-				}
-				
+                }
+                
                 var path = Path.Combine(inDir, fileName);
                 if (!File.Exists(path)) // Just in case
                     continue;
                 var bundle = File.ReadAllBytes(path);
 
-                var decBundle = DecryptAssetBundle(bundle, assetFormat);
+                var decBundle = DecryptAssetBundle(bundle, assetFormat, Convert.FromBase64String(bundleInfo.SecurityKey));
 
                 var dest = Path.Combine(dirDumpAssetBundle, fileName);
                 File.WriteAllBytes(dest, decBundle);
@@ -268,7 +268,7 @@ namespace UntieUnite.Core
         /// <param name="bundle_">Raw *.bundle file</param>
         /// <param name="assetFormat">Platform the data originated on</param>
         /// <remarks>Early returns if it is not encrypted.</remarks>
-        public static byte[] DecryptAssetBundle(byte[] bundle_, AssetFormat assetFormat)
+        public static byte[] DecryptAssetBundle(byte[] bundle_, AssetFormat assetFormat,  byte[] securityKey = null)
         {
             var bundle = (byte[]) bundle_.Clone();
             var signatureLen = Array.IndexOf(bundle, (byte)0, 0);
@@ -286,8 +286,20 @@ namespace UntieUnite.Core
 
             // Check that the bundle is actually encrypted.
             var flags = BigEndian.ToUInt32(bundle, offset + 0x10);
-            if ((flags & 0x200) == 0)
+            
+            if (securityKey != null && securityKey.Length == 1 && securityKey[0] == 0)
+                securityKey = null;
+            
+            if ((flags & 0x400) != 0) {
+                if (securityKey == null) 
+                    return bundle;
+
+                flags &= ~0x400u;
+            } else if ((flags & 0x200) != 0) {
+                flags &= ~0x200u;
+            } else {
                 return bundle;
+            }
 
             // Decrypt the bundle size.
             switch (assetFormat)
@@ -296,12 +308,11 @@ namespace UntieUnite.Core
                     AssetCrypto.DecryptAssetBundleSize(bundle, offset);
                     break;
                 case AssetFormat.Switch:
-                    AssetCrypto.DecryptAssetBundleSizeAes(bundle, offset);
+                    AssetCrypto.DecryptAssetBundleSizeAes(bundle, offset, securityKey);
                     break;
             }
 
             // Clear the compressed bit.
-            flags &= ~0x200u;
             BigEndian.GetBytes(flags).CopyTo(bundle, offset + 0x10);
 
             // Decrypt the bundle block.
@@ -313,13 +324,12 @@ namespace UntieUnite.Core
             if (version == 7) 
                 blockOffset = (blockOffset - 1 | 15) + 1;
 
-            switch (assetFormat)
-            {
+            switch (assetFormat) {
                 case AssetFormat.Android:
                     AssetCrypto.DecryptAssetBundleCompressedBlockInfo(bundle, blockOffset, compressedBlockSize);
                     break;
                 case AssetFormat.Switch:
-                    AssetCrypto.DecryptAssetBundleCompressedBlockInfoSM4(bundle, blockOffset, compressedBlockSize);
+                    AssetCrypto.DecryptAssetBundleCompressedBlockInfoSM4(bundle, blockOffset, compressedBlockSize, securityKey);
                     break;
             }
 

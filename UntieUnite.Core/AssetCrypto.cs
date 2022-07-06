@@ -93,14 +93,23 @@ namespace UntieUnite.Core
             Decrypt(bundle, offset, MetaDataKey.Length, MetaDataKey);
         }
 
-        public static void DecryptAssetBundleSizeAes(byte[] bundle, int offset)
+        public static void DecryptAssetBundleSizeAes(byte[] bundle, int offset, byte[] securityKey = null)
         {
             var metaBlockEnc = new byte[0x10];
             BitConverter.GetBytes(BigEndian.ToUInt64(bundle, offset + 0)).CopyTo(metaBlockEnc, 0);
             BitConverter.GetBytes(BigEndian.ToUInt32(bundle, offset + 8)).CopyTo(metaBlockEnc, 8);
             BitConverter.GetBytes(BigEndian.ToUInt32(bundle, offset + 12)).CopyTo(metaBlockEnc, 12);
 
-            using var aes = new AesCryptoServiceProvider {Key = MetaDataAesKey, IV = MetaDataAesIV, Padding = PaddingMode.None, Mode = CipherMode.CBC};
+            Console.WriteLine( BitConverter.ToString(metaBlockEnc) );
+
+            var useKey = MetaDataAesKey;
+            var useIV = MetaDataAesIV;
+            if (securityKey != null) {
+                useKey = securityKey;
+                useIV = BlockInfoSM4IV;
+            }
+
+            using var aes = new AesCryptoServiceProvider {Key = useKey, IV = useIV, Padding = PaddingMode.None, Mode = CipherMode.CBC};
 
             using var ms = new MemoryStream(metaBlockEnc, 0, metaBlockEnc.Length);
             using var cs = new CryptoStream(ms, aes.CreateDecryptor(), CryptoStreamMode.Read);
@@ -117,9 +126,14 @@ namespace UntieUnite.Core
             Decrypt(bundle, offset, size, BlockInfoKey);
         }
 
-        public static void DecryptAssetBundleCompressedBlockInfoSM4(byte[] bundle, int offset, int size)
+        public static void DecryptAssetBundleCompressedBlockInfoSM4(byte[] bundle, int offset, int size, byte[] securityKey = null)
         {
-            _sm4.DecryptCbc(BlockInfoSM4IV, bundle, offset, size);
+            if (securityKey == null || securityKey.Length != 16) {
+                _sm4.DecryptCbc(BlockInfoSM4IV, bundle, offset, size);
+            } else {
+                SM4 _single_sm4 = new (securityKey);
+                _single_sm4.DecryptCbc(BlockInfoSM4IV, bundle, offset, size);
+            }
         }
 
         public static byte[] FixAssetBundleBlockInfo(byte[] blockInfo)
